@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,7 +37,7 @@ func init() {
 }
 
 func readLog(t *testing.T) string {
-	_bytes, err := io.ReadAll(&buf)
+	_bytes, err := ioutil.ReadAll(&buf)
 	assert.NoError(t, err)
 	return string(_bytes)
 }
@@ -51,7 +51,7 @@ func performRequest(r http.Handler, method, path string) *httptest.ResponseRecor
 
 func parseBody(t *testing.T, res *httptest.ResponseRecorder) map[string]interface{} {
 	var response map[string]interface{}
-	body, err := io.ReadAll(res.Body)
+	body, err := ioutil.ReadAll(res.Body)
 	assert.NoError(t, err)
 	err = json.Unmarshal(body, &response)
 	assert.NoError(t, err)
@@ -156,7 +156,7 @@ func TestDefaultResponseFunction(t *testing.T) {
 			})
 			res := performRequest(router, "GET", path)
 			assert.Equal(t, res.Code, 402)
-			_bytes, err := io.ReadAll(res.Body)
+			_bytes, err := ioutil.ReadAll(res.Body)
 			assert.NoError(t, err)
 			assert.Len(t, _bytes, 0)
 		})
