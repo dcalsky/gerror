@@ -2,6 +2,12 @@ gerror
 ====
 Make error handling in Gin easy. It includes a middleware and a few  gin-liked methods to help you to handle errors gracefully for both logging and http response.
 
+[![Build Status](https://travis-ci.com/dcalsky/gerror.svg?branch=master)](https://travis-ci.com/dcalsky/gerror)
+[![codecov](https://codecov.io/gh/dcalsky/gerror/branch/master/graph/badge.svg?token=5PLZVKDMVD)](https://codecov.io/gh/dcalsky/gerror)
+[![Go Report Card](https://goreportcard.com/badge/github.com/dcalsky/gerror)](https://goreportcard.com/report/github.com/dcalsky/gerror)
+[![Go Reference](https://pkg.go.dev/badge/github.com/dcalsky/gerror.svg)](https://pkg.go.dev/github.com/dcalsky/gerror)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/dcalsky/gerror)
+
 # Installation
 
 1. Install package (go version 1.13+ is required):
