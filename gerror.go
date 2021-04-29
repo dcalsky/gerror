@@ -26,6 +26,14 @@ func New(code int, err error, hint string) error {
 	}
 }
 
+func NewHint(code int, hint string) error {
+	return New(code, nil, hint)
+}
+
+func NewEmpty(code int) error {
+	return New(code, nil, "")
+}
+
 func AbortWithHint(c *gin.Context, code int, hint string) {
 	AbortWithErrorAndHint(c, code, nil, hint)
 }

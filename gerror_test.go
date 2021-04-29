@@ -138,14 +138,6 @@ func TestDefaultOptionFunction(t *testing.T) {
 		body := parseBody(t, res)
 		assert.Equal(t, "error2", body["message"])
 	})
-	t.Run("without err", func(t *testing.T) {
-		path := getTestPath()
-		router.GET(path, func(c *gin.Context) {
-			AbortWithError(c, 500, nil)
-		})
-		res := performRequest(router, "GET", path)
-		assert.Equal(t, res.Code, 500)
-	})
 	t.Run("abort with origin error", func(t *testing.T) {
 		path := getTestPath()
 		router.GET(path, func(c *gin.Context) {
@@ -155,6 +147,17 @@ func TestDefaultOptionFunction(t *testing.T) {
 		assert.Equal(t, res.Code, 500)
 		body := parseBody(t, res)
 		assert.Equal(t, "origin error", body["message"])
+	})
+	t.Run("only hint", func(t *testing.T) {
+		path := getTestPath()
+		router.GET(path, func(c *gin.Context) {
+			err := NewHint(400, "bad input")
+			AbortWithError(c, 500, err)
+		})
+		res := performRequest(router, "GET", path)
+		assert.Equal(t, res.Code, 400)
+		body := parseBody(t, res)
+		assert.Equal(t, "bad input", body["message"])
 	})
 }
 
@@ -184,7 +187,8 @@ func TestCustomResponseBodyFunc(t *testing.T) {
 	t.Run("only status code", func(t *testing.T) {
 		path := getTestPath()
 		router.GET(path, func(c *gin.Context) {
-			AbortWithHint(c, 402, "")
+			err := NewEmpty(402)
+			AbortWithError(c, 500, err)
 		})
 		res := performRequest(router, "GET", path)
 		assert.Equal(t, res.Code, 402)
