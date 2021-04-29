@@ -69,7 +69,7 @@ func TestCustomResponseFunction(t *testing.T) {
 	router := gin.New()
 
 	router.Use(Middleware(MiddlewareOption{
-		ErrorMessages: errorMessages, ResponseBodyFunc: func(code int, message string) gin.H {
+		ResponseBodyFunc: func(code int, message string) interface{} {
 			return gin.H{
 				"foo":           "foo",
 				"bar":           "bar",
@@ -80,8 +80,7 @@ func TestCustomResponseFunction(t *testing.T) {
 	}))
 	path := getTestPath()
 	router.GET(path, func(c *gin.Context) {
-		err := errors.New("")
-		AbortWithGError(c, 500, err, "custom hint")
+		AbortWithHint(c, 500, "custom hint")
 	})
 	res := performRequest(router, "GET", path)
 	assert.Equal(t, res.Code, 500)
@@ -94,30 +93,31 @@ func TestCustomResponseFunction(t *testing.T) {
 func TestCustomErrorFunction(t *testing.T) {
 	router := gin.New()
 	router.Use(Middleware(MiddlewareOption{
-		ErrorMessages: errorMessages,
-		ErrorStatusFunc: func(code int) bool {
-			return code >= 400
+		LoggingFunc: func(code int, err error) {
+			if code >= 400 {
+				logrus.Errorln(err)
+			}
 		},
 	}))
 	path := getTestPath()
 	router.GET(path, func(c *gin.Context) {
 		err := errors.New("error")
-		AbortWithGError(c, 400, err, "")
+		AbortWithError(c, 400, err)
 	})
 	res := performRequest(router, "GET", path)
 	assert.Equal(t, res.Code, 400)
 	assert.Equal(t, "error", readLog(t))
 }
 
-func TestDefaultResponseFunction(t *testing.T) {
+func TestDefaultOptionFunction(t *testing.T) {
 	router := gin.New()
-	router.Use(Middleware(MiddlewareOption{ErrorMessages: errorMessages}))
+	router.Use(Middleware(MiddlewareOption{}))
 
 	t.Run("single error", func(t *testing.T) {
 		path := getTestPath()
 		router.GET(path, func(c *gin.Context) {
 			err := errors.New("single error")
-			AbortWithGError(c, 500, err, "custom hint")
+			AbortWithErrorAndHint(c, 500, err, "custom hint")
 		})
 		res := performRequest(router, "GET", path)
 		assert.Equal(t, res.Code, 500)
@@ -129,8 +129,8 @@ func TestDefaultResponseFunction(t *testing.T) {
 		path := getTestPath()
 		router.GET(path, func(c *gin.Context) {
 			err := errors.New("custom error")
-			AbortWithGError(c, 500, err, "error1")
-			AbortWithGError(c, 400, err, "error2")
+			AbortWithErrorAndHint(c, 500, err, "error1")
+			AbortWithErrorAndHint(c, 400, err, "error2")
 		})
 		res := performRequest(router, "GET", path)
 		// It uses the last error
@@ -138,37 +138,58 @@ func TestDefaultResponseFunction(t *testing.T) {
 		body := parseBody(t, res)
 		assert.Equal(t, "error2", body["message"])
 	})
-	t.Run("only including status code", func(t *testing.T) {
-		t.Run("defined status code", func(t *testing.T) {
-			path := getTestPath()
-			router.GET(path, func(c *gin.Context) {
-				AbortWithGError(c, 403, nil, "")
-			})
-			res := performRequest(router, "GET", path)
-			assert.Equal(t, res.Code, 403)
-			body := parseBody(t, res)
-			assert.Equal(t, "Forbidden", body["message"])
-		})
-		t.Run("undefined status code", func(t *testing.T) {
-			path := getTestPath()
-			router.GET(path, func(c *gin.Context) {
-				AbortWithGError(c, 402, nil, "")
-			})
-			res := performRequest(router, "GET", path)
-			assert.Equal(t, res.Code, 402)
-			_bytes, err := ioutil.ReadAll(res.Body)
-			assert.NoError(t, err)
-			assert.Len(t, _bytes, 0)
-		})
-	})
-	t.Run("", func(t *testing.T) {
+	t.Run("without err", func(t *testing.T) {
 		path := getTestPath()
 		router.GET(path, func(c *gin.Context) {
-			AbortWithGError(c, 403, nil, "")
+			AbortWithError(c, 500, nil)
+		})
+		res := performRequest(router, "GET", path)
+		assert.Equal(t, res.Code, 500)
+	})
+	t.Run("abort with origin error", func(t *testing.T) {
+		path := getTestPath()
+		router.GET(path, func(c *gin.Context) {
+			_ = c.AbortWithError(500, errors.New("origin error"))
+		})
+		res := performRequest(router, "GET", path)
+		assert.Equal(t, res.Code, 500)
+		body := parseBody(t, res)
+		assert.Equal(t, "origin error", body["message"])
+	})
+}
+
+func TestCustomResponseBodyFunc(t *testing.T) {
+	router := gin.New()
+	router.Use(Middleware(MiddlewareOption{ResponseBodyFunc: func(code int, message string) interface{} {
+		if message == "" {
+			if errorMessages[code] != "" {
+				return gin.H{"message": errorMessages[code]}
+			} else {
+				return nil
+			}
+		} else {
+			return gin.H{"message": message}
+		}
+	}}))
+	t.Run("defined status code", func(t *testing.T) {
+		path := getTestPath()
+		router.GET(path, func(c *gin.Context) {
+			AbortWithHint(c, 403, "")
 		})
 		res := performRequest(router, "GET", path)
 		assert.Equal(t, res.Code, 403)
 		body := parseBody(t, res)
 		assert.Equal(t, "Forbidden", body["message"])
+	})
+	t.Run("only status code", func(t *testing.T) {
+		path := getTestPath()
+		router.GET(path, func(c *gin.Context) {
+			AbortWithHint(c, 402, "")
+		})
+		res := performRequest(router, "GET", path)
+		assert.Equal(t, res.Code, 402)
+		_bytes, err := ioutil.ReadAll(res.Body)
+		assert.NoError(t, err)
+		assert.Len(t, _bytes, 0)
 	})
 }

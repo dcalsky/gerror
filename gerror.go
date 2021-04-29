@@ -1,7 +1,6 @@
 package gerror
 
 import (
-	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
@@ -13,28 +12,28 @@ type GError struct {
 }
 
 func (g GError) Error() string {
+	if g.Err == nil {
+		return ""
+	}
 	return g.Err.Error()
 }
 
 func New(code int, err error, hint string) error {
-	var e error
-	if err != nil {
-		e = err
-	} else {
-		e = errors.New("")
-	}
 	return GError{
 		code,
-		e,
+		err,
 		hint,
 	}
 }
 
-func AbortWithGError(c *gin.Context, code int, err error, hint string) {
-	AbortWithError(c, New(code, err, hint))
+func AbortWithHint(c *gin.Context, code int, hint string) {
+	AbortWithErrorAndHint(c, code, nil, hint)
 }
 
-func AbortWithError(c *gin.Context, err error) {
+func AbortWithErrorAndHint(c *gin.Context, code int, err error, hint string) {
+	if _, ok := err.(GError); !ok {
+		err = New(code, err, hint)
+	}
 	c.Abort()
 	c.Errors = append(c.Errors, &gin.Error{
 		Err:  err,
@@ -42,23 +41,31 @@ func AbortWithError(c *gin.Context, err error) {
 	})
 }
 
+func AbortWithError(c *gin.Context, code int, err error) {
+	AbortWithErrorAndHint(c, code, err, "")
+}
+
 type MiddlewareOption struct {
-	ResponseBodyFunc func(code int, message string) gin.H
-	ErrorStatusFunc  func(code int) bool
-	ErrorMessages    map[int]string
+	ResponseBodyFunc func(code int, message string) interface{}
+	LoggingFunc      func(code int, err error)
 }
 
 func Middleware(option MiddlewareOption) gin.HandlerFunc {
 	if option.ResponseBodyFunc == nil {
-		option.ResponseBodyFunc = func(code int, message string) gin.H {
+		option.ResponseBodyFunc = func(code int, message string) interface{} {
+			if message == "" {
+				return nil
+			}
 			return gin.H{
 				"message": message,
 			}
 		}
 	}
-	if option.ErrorStatusFunc == nil {
-		option.ErrorStatusFunc = func(code int) bool {
-			return code >= 500
+	if option.LoggingFunc == nil {
+		option.LoggingFunc = func(code int, err error) {
+			if code >= 500 {
+				logrus.Errorln(err)
+			}
 		}
 	}
 	return func(c *gin.Context) {
@@ -67,31 +74,18 @@ func Middleware(option MiddlewareOption) gin.HandlerFunc {
 		if c.IsAborted() {
 			var message string
 			code := c.Writer.Status()
-			if lastError == nil {
-				return
-			}
 			if gError, ok := lastError.Err.(GError); ok {
-				if gError.Code >= 200 && gError.Code < 600 {
-					code = gError.Code
-				}
-				if gError.Hint != "" {
-					message = gError.Hint
-				}
+				code = gError.Code
+				message = gError.Hint
 			} else {
 				message = lastError.Error()
 			}
-			if option.ErrorStatusFunc(code) {
-				logrus.Errorln(lastError)
-			}
-			if message == "" {
-				if option.ErrorMessages[code] != "" {
-					message = option.ErrorMessages[code]
-					c.JSON(code, option.ResponseBodyFunc(code, message))
-				} else {
-					c.Status(code)
-				}
+			option.LoggingFunc(code, lastError)
+			body := option.ResponseBodyFunc(code, message)
+			if body == nil {
+				c.Status(code)
 			} else {
-				c.JSON(code, option.ResponseBodyFunc(code, message))
+				c.JSON(code, body)
 			}
 		}
 	}

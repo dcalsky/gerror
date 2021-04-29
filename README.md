@@ -1,6 +1,6 @@
 gerror
 ====
-Make error handling in Gin easy. It includes a middleware and a few  gin-liked methods to help you to handle errors gracefully for both logging and http response.
+Make error handling in Gin easy. It includes a middleware, and a few gin-liked methods to help you to handle errors gracefully for both logging and http response.
 
 [![Build Status](https://travis-ci.com/dcalsky/gerror.svg?branch=master)](https://travis-ci.com/dcalsky/gerror)
 [![codecov](https://codecov.io/gh/dcalsky/gerror/branch/master/graph/badge.svg?token=5PLZVKDMVD)](https://codecov.io/gh/dcalsky/gerror)
@@ -10,7 +10,7 @@ Make error handling in Gin easy. It includes a middleware and a few  gin-liked m
 
 # Installation
 
-1. Install package (go version 1.13+ is required):
+1. Install package (due to Gin, go version 1.13+ is required):
 
 ```shell
 $ go get -u github.com/dcalsky/gerror
@@ -37,10 +37,10 @@ errorMessages := map[int]string{
    503: "Service Unavailable",
 }
 router := gin.New()
-router.Use(gerror.Middleware(gerror.MiddlewareOption{ErrorMessages: errorMessages}))
+router.Use(gerror.Middleware(gerror.MiddlewareOption{}))
 ```
 
-Under default option, if an error throwed, the response body (Of course the http header includes: `Content-Type: application/json`) is:
+Under default option, if an error caused, the response body (Of course the http header includes: `Content-Type: application/json`) is:
 
 ```json
 {
@@ -59,10 +59,11 @@ time="2015-03-26T01:27:38-04:00" level=error msg="your error message"
 Or you can define your custom response body by passing `ResponseBodyFunc` argument:
 
 ```go
-router.Use(Middleware(MiddlewareOption{
-   ErrorMessages: errorMessages, ResponseBodyFunc: func(code int, message string) gin.H {
+router.Use(gerror.Middleware(gerror.MiddlewareOption{
+   ResponseBodyFunc: func(code int, message string) interface{} {
       return gin.H{
          "foo":           "foo",
+         "bar":           "bar",
          "code":          code,
          "customMessage": message,
       }
@@ -72,21 +73,23 @@ router.Use(Middleware(MiddlewareOption{
 
 ### Custom error status validation
 
-By default, gerror middleware only log error whose status code >= 500, but you can define a custom error status function to let it log a wider range of errors.
+By default, gerror middleware only log error whose status code >= 500, but you can define a custom logging function to let it log a wider range of errors.
 
-The gerror middleware can log all errors that has status code >= 400 now with pass `ErrorStatusFunc` argument:
+The gerror middleware can log errors that has status code >= 400 now with passing `LoggingFunc` argument:
 
 ```go
-router.Use(Middleware(MiddlewareOption{
-   ErrorMessages: errorMessages,
-   ErrorStatusFunc: func(code int) bool {
-      return code >= 400
+router.Use(gerror.Middleware(gerror.MiddlewareOption{
+   LoggingFunc: func(code int, err error) {
+      if code >= 400 {
+         logrus.Errorln(err)
+      }
    },
 }))
 ```
 
 
 ## Throw the error
+### GError
 
 ```go
 router := gin.New()
@@ -101,7 +104,9 @@ router.Get("/", func (c *gin.Context) {
 Response body will be:
 
 ```json
-{"message": "Error message for user"}
+{
+   "message": "Error message for user"
+}
 ```
 
 And the logrus will output following error message in stdout:
@@ -112,24 +117,25 @@ time="2015-03-26T01:27:38-04:00" level=error msg="custom error message: error1"
 
 ### Throw error in one line
 
-Define a new error then throw it is trivial, so gerror also allow creating and throwing the error in one line:
+The gerror also allows creating and throwing GError in one line:
 
 ```go
-gerror.AbortWithGError(c, 500, errors.New("custom error"), "Error message for user")
+gerror.AbortWithErrorAndHint(c, 500, errors.New("custom error"), "Error message for user")
 ```
 
 ### Omit error, only keep hint message
 
-Sometimes, there is no error to throw, leave empty to it:
+Sometimes, there is no error to throw, and only hint has to be shown, you can use `gerror.AbortWithHint`:
 
 ```go
-gerror.AbortWithGError(c, 400, nil, "Bad Input")
+gerror.AbortWithHint(c, 400, "Bad Input")
 ```
 
-### Omit hint message and error
+### Omit both error and hint message
 
 ```go
-gerror.AbortWithGError(c, 404, nil, "") // Equal to: c.AbortWithStatus(404)
+// Equal to: c.AbortWithStatus(404)
+gerror.AbortWithErrorAndHint(c, 404, nil, "") 
 ```
 
 # Real World
@@ -145,7 +151,7 @@ foo := model.Foo{
    name: "foo"
 }
 if err := db.Create(&foo); err != nil {
-   gerror.AbortWithError(500, err, "Create Foo instance failed")
+   gerror.AbortWithErrorAndHint(500, err, "Create Foo instance failed")
    return
 }
 c.JSON(200, gin.H{
@@ -156,6 +162,8 @@ c.JSON(200, gin.H{
 
 ### Transaction
 
+Operations in a transaction may mix multiple error types, try to capture one of them after transaction executed and throw it with `gerror.AbortWithErrorAndHint`. If the error is not `GError`, the custom values in the `AbortWithErrorAndHint` will be used.
+
 ```go
 // ...
 var foo model.Foo
@@ -165,11 +173,13 @@ if err := r.db.Transaction(func(tx *gorm.DB) error {
       return gerror.New(404, nil, "Not found this foo")
    }
    if err := tx.Delete(&foo).Error; err != nil {
-      return gerror.New(500, nil, "Delete foo failed, please retry it again")
+      return err
    }
    return nil
 }); err != nil {
-   gerror.AbortWithError(c, err)
+   // If err is GError, status code is 404
+   // Otherwise, status code is 500 and hint message will be what you defined.
+   gerror.AbortWithErrorAndHint(c, 500, err, "Delete foo failed, please retry it again")
    return
 }
 c.JSON(200, gin.H{
