@@ -79,7 +79,7 @@ func Middleware(option MiddlewareOption) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 		lastError := c.Errors.Last()
-		if c.IsAborted() {
+		if c.IsAborted() && lastError != nil {
 			var message string
 			code := c.Writer.Status()
 			if gError, ok := lastError.Err.(GError); ok {
